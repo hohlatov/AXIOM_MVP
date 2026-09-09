@@ -28,9 +28,9 @@ services:
     build: ./axiom-backend
     restart: unless-stopped
     env_file:
-      - ./axiom-backend/.env  # <-- ПУТЬ ИСПРАВЛЕН
+      - .env
     environment:
-      - DATABASE_URL=postgresql://axiom:axiom@db:5432/axiom  # <-- ИСПРАВЛЕНО
+      - DATABASE_URL=postgresql://axiom_user:axiom_pass@db:5432/axiom_db
       - REDIS_URL=redis://redis:6379/0
       - FRONTEND_URL=https://relaxdev.ru
     depends_on:
@@ -44,18 +44,21 @@ services:
       - ./axiom-backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Заглушка. Здесь будет сервис Валентины (RAG-ассистент + диагностика),
+  # контракт см. в docs/ai-service-contract.md. Пока backend читает
+  # AI_SERVICE_URL из .env и обращается к любому адресу, который сюда впишем —
+  # реальный контейнер подключим, когда сервис будет готов.
+
   frontend:
     build:
       context: ./axiom-frontend
       args:
-        - NEXT_PUBLIC_API_URL=https://relaxdev.ru/api
+        - NEXT_PUBLIC_API_URL=https://relaxdev.ru/api  # или http://backend:8000
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=https://relaxdev.ru/api  # <-- ДОБАВЛЕНО
 
 volumes:
   axiom_pg_data:
