@@ -14,15 +14,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(title="AXIOM API", version="0.1.0")
 
-origins = [
-    "http://localhost:3000",      # для локальной разработки
-    "https://relaxdev.ru",        # ВАШ ПРОДАКШЕН
-    "https://www.relaxdev.ru",    # с www (опционально)
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[settings.frontend_url],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
