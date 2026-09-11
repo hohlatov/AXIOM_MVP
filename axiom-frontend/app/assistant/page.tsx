@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Shell } from "@/components/Shell";
 import { useRequireAuth } from "@/lib/auth";
 import { apiFetch } from "@/lib/api";
+import { Notice } from "@/components/ui";
 
 type Message = { role: "user" | "assistant"; content: string };
 type ChatResponse = { session_id: string; answer: string; sources: string[] };
@@ -74,6 +75,12 @@ export default function AssistantPage() {
           ))}
         </div>
       </div>
+
+      <Notice className="mt-4 max-w-2xl">
+        Сейчас ассистент отвечает заготовленными объяснениями, а не полноценной ИИ-моделью —
+        мы в процессе подключения настоящей модели. Тренажёр и проверка ответов уже работают
+        по-настоящему.
+      </Notice>
 
       <div className="mt-6 max-w-2xl">
         <div className="rounded-card border border-hairline bg-card flex flex-col h-[60vh]">

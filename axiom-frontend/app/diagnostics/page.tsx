@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { useRequireAuth } from "@/lib/auth";
 import { apiFetch, ApiError } from "@/lib/api";
-import { Button } from "@/components/ui";
+import { Button, Notice } from "@/components/ui";
 
 type DiagnosticItem = {
   item_id: string | null;
@@ -97,11 +97,15 @@ export default function DiagnosticsPage() {
     <Shell>
       <h1 className="font-display font-extrabold text-2xl text-ink">Диагностика</h1>
 
+      <Notice className="mt-4 max-w-md">
+        Сейчас это упрощённая версия: несколько тестовых вопросов, результат пока не
+        подстраивается под ваши ответы. Полноценную адаптивную диагностику мы дорабатываем.
+      </Notice>
+
       {stage === "intro" && (
         <div className="mt-6 max-w-md rounded-card border border-hairline bg-card p-6">
           <p className="text-sm text-ink leading-relaxed">
-            Адаптивный тест подстроится под ваш уровень и покажет, на каких темах стоит
-            сосредоточиться. Обычно занимает до 45 минут.
+            Короткий тест покажет пример того, как будет выглядеть диагностика темы.
           </p>
           <label className="block mt-5">
             <span className="block text-sm font-medium text-ink mb-1.5">Предмет</span>
