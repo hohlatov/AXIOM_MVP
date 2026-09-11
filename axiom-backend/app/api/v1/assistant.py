@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.auth import get_current_user
 from app.core.ai_client import AIServiceError, get_chat_answer
+from app.core.rate_limit import rate_limit_by_key
 from app.db.session import get_db
 from app.models.assistant import ChatMessage, ChatSession
 from app.models.user import User
@@ -26,6 +27,13 @@ async def chat(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Лимит по пользователю, не по IP — точка интеграции с платным ИИ-сервисом
+    # (см. docs/security/security-audit.md, находка 2). Пока AI_SERVICE_MOCK=true
+    # цена ошибки нулевая, но лимит должен стоять до переключения на реальный
+    # сервис, а не после. 30/час — щедро для честного использования, но не даёт
+    # одному токену исчерпать бюджет ИИ-провайдера скриптом.
+    await rate_limit_by_key("assistant-chat", str(user.id), max_requests=30, window_seconds=3600)
+
     if payload.session_id:
         session = await db.get(ChatSession, payload.session_id)
         if not session or session.user_id != user.id:

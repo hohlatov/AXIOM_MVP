@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch, setAccessToken, ApiError } from "./api";
+import { apiFetch, setAccessToken, setRefreshToken, ApiError } from "./api";
 
 type User = {
   id: string;
@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       { method: "POST", body: JSON.stringify({ email, password }) }
     );
     setAccessToken(tokens.access_token);
+    setRefreshToken(tokens.refresh_token);
     await loadUser();
   }
 
@@ -60,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     setAccessToken(null);
+    setRefreshToken(null);
     setUser(null);
   }
 

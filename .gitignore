@@ -1,0 +1,28 @@
+# Секреты / окружение — реальные значения никогда не коммитятся
+.env
+.env.local
+.env.*.local
+!.env.example
+!axiom-frontend/.env.local.example
+
+# Backend (Python)
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Frontend (Node/Next.js)
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+npm-debug.log*
+
+# ОС/редакторы
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

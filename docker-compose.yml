@@ -11,7 +11,9 @@ services:
     volumes:
       - axiom_pg_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # Привязано к localhost — доступ для локальных инструментов (psql, миграции),
+      # но не выставлено на 0.0.0.0/публичный интернет (см. docs/security/security-audit.md).
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U axiom"]
       interval: 5s
@@ -22,7 +24,8 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      # Привязано к localhost — см. комментарий у db выше.
+      - "127.0.0.1:6379:6379"
 
   backend:
     build: ./axiom-backend

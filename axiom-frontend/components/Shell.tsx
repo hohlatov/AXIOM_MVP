@@ -42,7 +42,7 @@ export function Shell({ children }: { children: ReactNode }) {
             );
           })}
         </nav>
-        <div className="hidden md:block mt-auto px-5 py-4 border-t border-hairline">
+        <div className="md:mt-auto px-5 py-4 border-t border-hairline">
           <p className="text-xs text-muted truncate">{user?.email}</p>
           <button
             onClick={logout}

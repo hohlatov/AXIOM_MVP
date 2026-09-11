@@ -2,13 +2,14 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { setAccessToken, API_URL } from "@/lib/api";
+import { setAccessToken, setRefreshToken, API_URL } from "@/lib/api";
 import { Button } from "@/components/ui";
 
 function VkCallbackInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
+  const state = searchParams.get("state");
   const errorParam = searchParams.get("error");
 
   const [consent, setConsent] = useState(false);
@@ -17,11 +18,11 @@ function VkCallbackInner() {
 
   useEffect(() => {
     if (errorParam) setError("VK не подтвердил авторизацию. Попробуйте войти ещё раз.");
-    else if (!code) setError("Отсутствует код авторизации от VK. Попробуйте войти ещё раз.");
-  }, [code, errorParam]);
+    else if (!code || !state) setError("Отсутствует код авторизации от VK. Попробуйте войти ещё раз.");
+  }, [code, state, errorParam]);
 
   async function finish() {
-    if (!code) return;
+    if (!code || !state) return;
     if (!consent) {
       setError("Нужно согласие родителя/законного представителя, чтобы продолжить");
       return;
@@ -29,7 +30,7 @@ function VkCallbackInner() {
     setSubmitting(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ code, parental_consent: "true" });
+      const params = new URLSearchParams({ code, state, parental_consent: "true" });
       const res = await fetch(`${API_URL}/api/v1/auth/vk/callback?${params.toString()}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -37,6 +38,7 @@ function VkCallbackInner() {
       }
       const tokens = await res.json();
       setAccessToken(tokens.access_token);
+      setRefreshToken(tokens.refresh_token);
       router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось войти через VK");
