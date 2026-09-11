@@ -17,11 +17,36 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.auth import get_current_user
 from app.core.answer_check import answers_match
 from app.db.session import get_db
+from app.models.knowledge import KnowledgeState
 from app.models.trainer import TaskAttempt, TrainerTask
 from app.models.user import User
-from app.schemas.trainer import SubmitAnswer, SubmitResult, TrainerTaskOut
+from app.schemas.trainer import SkillMapTopic, SubmitAnswer, SubmitResult, TrainerTaskOut
 
 router = APIRouter(prefix="/trainer", tags=["trainer"])
+
+KNOWLEDGE_STATE_DECAY = 0.8  # см. docs/architecture/adaptive-learning-engine.md — EWMA, не ML
+
+
+async def _update_knowledge_state(db: AsyncSession, user: User, task: TrainerTask, is_correct: bool) -> None:
+    """Живая карта навыков (killer feature) — детерминированная EWMA-оценка
+    владения темой, обновляемая после каждой попытки. new = old*0.8 + result*0.2;
+    на первой попытке по теме — просто сам результат, без фиктивной базовой линии."""
+    result = 1.0 if is_correct else 0.0
+    state = await db.scalar(
+        select(KnowledgeState).where(
+            KnowledgeState.user_id == user.id,
+            KnowledgeState.subject == task.subject,
+            KnowledgeState.topic == task.topic,
+        )
+    )
+    if state is None:
+        db.add(KnowledgeState(
+            user_id=user.id, subject=task.subject, topic=task.topic,
+            ability_score=result, attempts_count=1,
+        ))
+    else:
+        state.ability_score = state.ability_score * KNOWLEDGE_STATE_DECAY + result * (1 - KNOWLEDGE_STATE_DECAY)
+        state.attempts_count += 1
 
 
 async def _pick_topic(db: AsyncSession, user: User, subject: str) -> str | None:
@@ -106,6 +131,38 @@ async def submit_answer(
         is_correct=is_correct,
     )
     db.add(attempt)
+    await _update_knowledge_state(db, user, task, is_correct)
     await db.commit()
 
     return SubmitResult(is_correct=is_correct, correct_answer=task.correct_answer, explanation=task.explanation)
+
+
+@router.get("/skill-map", response_model=list[SkillMapTopic])
+async def skill_map(
+    subject: str = Query(pattern="^(math|russian)$"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Живая карта навыков ученика — по каждой теме предмета: уровень владения
+    (EWMA по попыткам в тренажёре) и число попыток. Темы, которых ученик ещё
+    не касался, тоже возвращаются (ability_score=null, attempts_count=0), чтобы
+    UI мог честно показать «не начато», а не молчать о существовании темы."""
+    all_topics = (
+        await db.scalars(select(TrainerTask.topic).where(TrainerTask.subject == subject).distinct())
+    ).all()
+
+    states = (
+        await db.scalars(
+            select(KnowledgeState).where(KnowledgeState.user_id == user.id, KnowledgeState.subject == subject)
+        )
+    ).all()
+    by_topic = {s.topic: s for s in states}
+
+    return [
+        SkillMapTopic(
+            topic=topic,
+            ability_score=by_topic[topic].ability_score if topic in by_topic else None,
+            attempts_count=by_topic[topic].attempts_count if topic in by_topic else 0,
+        )
+        for topic in sorted(all_topics)
+    ]

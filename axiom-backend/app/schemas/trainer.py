@@ -25,3 +25,9 @@ class SubmitResult(BaseModel):
     is_correct: bool
     correct_answer: str
     explanation: str
+
+
+class SkillMapTopic(BaseModel):
+    topic: str
+    ability_score: float | None  # None = тема ещё не пройдена ни разу
+    attempts_count: int

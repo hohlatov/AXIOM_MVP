@@ -15,17 +15,36 @@ type DashboardSummary = {
   quick_actions: string[];
   has_diagnostic_result: boolean;
 };
+type SkillMapTopic = { topic: string; ability_score: number | null; attempts_count: number };
+
+const SUBJECT_LABELS: Record<string, string> = { math: "Математика", russian: "Русский язык" };
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useRequireAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [skillMap, setSkillMap] = useState<Record<string, SkillMapTopic[]>>({});
+  const [skillMapLoading, setSkillMapLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
     apiFetch<DashboardSummary>("/api/v1/dashboard/summary")
       .then(setSummary)
       .finally(() => setLoading(false));
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all(
+      Object.keys(SUBJECT_LABELS).map((subject) =>
+        apiFetch<SkillMapTopic[]>(`/api/v1/trainer/skill-map?subject=${subject}`).then(
+          (topics) => [subject, topics] as const
+        )
+      )
+    )
+      .then((entries) => setSkillMap(Object.fromEntries(entries)))
+      .catch(() => setSkillMap({}))
+      .finally(() => setSkillMapLoading(false));
   }, [user]);
 
   if (authLoading || !user) return null;
@@ -64,6 +83,61 @@ export default function DashboardPage() {
                 </div>
               </div>
             ))}
+          </section>
+
+          <section className="mt-8">
+            <h2 className="font-display font-bold text-lg text-ink">Карта навыков</h2>
+            <p className="mt-1 text-sm text-muted">
+              Обновляется после каждой попытки в тренажёре — реальный прогресс по темам,
+              а не диагностика.
+            </p>
+
+            {skillMapLoading ? (
+              <p className="mt-4 text-sm text-muted">Загрузка…</p>
+            ) : (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                {Object.entries(SUBJECT_LABELS).map(([subject, label]) => {
+                  const topics = skillMap[subject] ?? [];
+                  if (!topics.length) return null;
+                  return (
+                    <div
+                      key={subject}
+                      className="rounded-card border border-hairline bg-card p-5"
+                    >
+                      <p className="text-sm font-medium text-ink">{label}</p>
+                      <div className="mt-3 space-y-3">
+                        {topics.map((t) => {
+                          const percent =
+                            t.ability_score === null ? null : Math.round(t.ability_score * 100);
+                          return (
+                            <div key={t.topic}>
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="text-ink">{t.topic}</span>
+                                <span className="font-mono text-muted">
+                                  {percent === null ? "не начато" : `${percent}%`}
+                                </span>
+                              </div>
+                              <div className="mt-1 h-1.5 w-full rounded-full bg-hairline overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    percent === null
+                                      ? ""
+                                      : percent >= 60
+                                      ? "bg-teal"
+                                      : "bg-amber"
+                                  }`}
+                                  style={{ width: `${percent ?? 0}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
 
           {!summary?.has_diagnostic_result && (
