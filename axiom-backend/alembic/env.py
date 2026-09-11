@@ -10,6 +10,7 @@ from app.models.user import User  # noqa: F401  — регистрирует м�
 from app.models.trainer import TrainerTask, TaskAttempt  # noqa: F401
 from app.models.diagnostics import DiagnosticSession, DiagnosticResult, DiagnosticAnswer  # noqa: F401
 from app.models.assistant import ChatSession, ChatMessage  # noqa: F401
+from app.models.knowledge import KnowledgeState  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

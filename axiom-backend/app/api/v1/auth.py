@@ -25,6 +25,7 @@ from app.models.user import User
 from app.schemas.user import (
     PasswordResetConfirm,
     PasswordResetRequest,
+    RefreshRequest,
     TokenPair,
     UserLogin,
     UserOut,
@@ -82,6 +83,38 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit_by_ip("refresh", max_requests=30, window_seconds=900))],
+)
+async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    """Обмен refresh-токена на новый access-токен — без него сессия обрывалась
+    через ACCESS_TOKEN_EXPIRE_MINUTES (60 мин) без возможности переавторизации,
+    включая посреди диагностики/разговора с ассистентом (docs/architecture/
+    technical-debt.md, C4). refresh_token не ротируется (возвращаем тот же) —
+    у нас нет denylist для отзыва старых токенов, а вводить его сейчас ради
+    "полной" ротации было бы избыточно для текущего масштаба; тот же
+    refresh_token просто действует до своего естественного истечения
+    (REFRESH_TOKEN_EXPIRE_DAYS)."""
+    try:
+        token_payload = decode_token(payload.refresh_token)
+        if token_payload.get("type") != "refresh":
+            raise ValueError("wrong token type")
+        user_id = uuid.UUID(token_payload["sub"])
+    except (JWTError, ValueError, KeyError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Невалидный refresh-токен")
+
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Пользователь не найден")
+
+    return TokenPair(
+        access_token=create_access_token(user.id),
+        refresh_token=payload.refresh_token,
+    )
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
     try:
         payload = decode_token(token)
@@ -104,10 +137,21 @@ async def read_current_user(user: User = Depends(get_current_user)):
 
 # ---------- VK ID ----------
 
+VK_STATE_TTL_SECONDS = 10 * 60
+VK_STATE_KEY_PREFIX = "vkstate:"
+
+
 @router.get("/vk/login")
 async def vk_login():
-    """Отдаёт фронтенду URL для редиректа на VK OAuth."""
+    """Отдаёт фронтенду URL для редиректа на VK OAuth.
+
+    state — одноразовый nonce против login CSRF: сохраняем его в Redis,
+    чтобы на /vk/callback убедиться, что запрос — продолжение именно этого
+    инициированного нами флоу, а не подделанный сторонним сайтом редирект
+    с чужим code (см. docs/security/security-audit.md, находка 7)."""
     state = secrets.token_urlsafe(16)
+    redis = get_redis()
+    await redis.setex(f"{VK_STATE_KEY_PREFIX}{state}", VK_STATE_TTL_SECONDS, "1")
     return {"authorize_url": build_authorize_url(state), "state": state}
 
 
@@ -116,7 +160,16 @@ async def vk_login():
     response_model=TokenPair,
     dependencies=[Depends(rate_limit_by_ip("vk-callback", max_requests=20, window_seconds=3600))],
 )
-async def vk_callback(code: str, parental_consent: bool, db: AsyncSession = Depends(get_db)):
+async def vk_callback(code: str, state: str, parental_consent: bool, db: AsyncSession = Depends(get_db)):
+    redis = get_redis()
+    state_key = f"{VK_STATE_KEY_PREFIX}{state}"
+    if not await redis.get(state_key):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Сессия авторизации через VK истекла или недействительна. Попробуйте войти ещё раз.",
+        )
+    await redis.delete(state_key)  # одноразовый — использован независимо от исхода exchange_code ниже
+
     try:
         vk_data = await exchange_code(code)
     except Exception:

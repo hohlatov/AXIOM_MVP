@@ -1,6 +1,20 @@
 "use client";
 
-import { ButtonHTMLAttributes, InputHTMLAttributes, forwardRef } from "react";
+import { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, forwardRef } from "react";
+
+/** Ненавязчивая пометка честного статуса функции — используется там, где
+ * функциональность пока упрощённая версия того, что заявлено (см.
+ * docs/audit/04-documentation-gap-analysis.md, docs/product/05-feature-prioritization.md, P0). */
+export function Notice({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      role="note"
+      className={`rounded-lg border border-amber/30 bg-amber-soft px-4 py-3 text-sm text-ink leading-relaxed ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function Button({
   variant = "primary",

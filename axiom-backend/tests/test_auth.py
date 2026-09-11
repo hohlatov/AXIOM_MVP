@@ -124,3 +124,89 @@ async def test_register_records_consent_timestamp(client):
     assert resp.status_code == 201
     body = resp.json()
     assert body["parental_consent_given"] is True
+
+
+async def test_vk_login_issues_and_stores_state(client):
+    resp = await client.get("/api/v1/auth/vk/login")
+    assert resp.status_code == 200
+    body = resp.json()
+    state = body["state"]
+    assert state in body["authorize_url"]
+
+    redis = get_redis()
+    assert await redis.get(f"vkstate:{state}") is not None
+
+
+async def test_vk_callback_rejects_unknown_state(client):
+    resp = await client.get(
+        "/api/v1/auth/vk/callback",
+        params={"code": "whatever", "state": "never-issued", "parental_consent": "true"},
+    )
+    assert resp.status_code == 400
+
+
+async def test_vk_callback_state_is_one_time_use(client, monkeypatch):
+    async def _fake_exchange_code(code):
+        raise ValueError("stub — реального обращения к VK в тестах не делаем")
+
+    monkeypatch.setattr("app.api.v1.auth.exchange_code", _fake_exchange_code)
+
+    login_resp = await client.get("/api/v1/auth/vk/login")
+    state = login_resp.json()["state"]
+
+    # exchange_code застаблен и падает сразу — важно здесь не то, что вернёт
+    # эндпоинт, а что state после первого использования удаляется из Redis.
+    await client.get(
+        "/api/v1/auth/vk/callback",
+        params={"code": "whatever", "state": state, "parental_consent": "true"},
+    )
+
+    redis = get_redis()
+    assert await redis.get(f"vkstate:{state}") is None
+
+    reuse = await client.get(
+        "/api/v1/auth/vk/callback",
+        params={"code": "whatever", "state": state, "parental_consent": "true"},
+    )
+    assert reuse.status_code == 400
+
+
+async def test_refresh_issues_new_working_access_token(client):
+    await _register(client, "frank@example.com")
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "frank@example.com", "password": "testpassword123"}
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 200
+    new_access_token = resp.json()["access_token"]
+    assert resp.json()["refresh_token"] == refresh_token  # не ротируется — см. комментарий в auth.py
+
+    me = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {new_access_token}"})
+    assert me.status_code == 200
+    assert me.json()["email"] == "frank@example.com"
+
+
+async def test_refresh_rejects_access_token(client):
+    await _register(client, "grace@example.com")
+    login = await client.post(
+        "/api/v1/auth/login", json={"email": "grace@example.com", "password": "testpassword123"}
+    )
+    access_token = login.json()["access_token"]
+
+    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": access_token})
+    assert resp.status_code == 401
+
+
+async def test_refresh_rejects_garbage_token(client):
+    resp = await client.post("/api/v1/auth/refresh", json={"refresh_token": "not-a-jwt"})
+    assert resp.status_code == 401
+
+
+async def test_vk_callback_requires_state_param(client):
+    resp = await client.get(
+        "/api/v1/auth/vk/callback",
+        params={"code": "whatever", "parental_consent": "true"},
+    )
+    assert resp.status_code == 422
